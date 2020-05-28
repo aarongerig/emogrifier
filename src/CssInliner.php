@@ -172,13 +172,13 @@ class CssInliner extends AbstractHtmlProcessor
         $cssWithoutComments = $this->removeCssComments($combinedCss);
         list($cssWithoutCommentsCharsetOrImport, $cssImportRules)
             = $this->extractImportAndCharsetRules($cssWithoutComments);
-        list($cssWithoutCommentsCharsetOrImportAndFontFaces, $cssFontFaces)
-            = $this->extractFontFaces($cssWithoutCommentsCharsetOrImport);
+        list($cssWithoutCommentsCharsetImportOrFontFace, $cssFontFaces)
+            = $this->extractFontFaceRules($cssWithoutCommentsCharsetOrImport);
 
         $uninlinableCss = $cssImportRules . $cssFontFaces;
 
         $excludedNodes = $this->getNodesToExclude();
-        $cssRules = $this->parseCssRules($cssWithoutCommentsCharsetOrImportAndFontFaces);
+        $cssRules = $this->parseCssRules($cssWithoutCommentsCharsetImportOrFontFace);
         $cssSelectorConverter = $this->getCssSelectorConverter();
         foreach ($cssRules['inlinable'] as $cssRule) {
             try {
@@ -530,27 +530,35 @@ class CssInliner extends AbstractHtmlProcessor
     }
 
     /**
-     * Extracts `@font-face` rules from the supplied CSS.  Note that `@font-face` is not case sensitive.
+     * Extracts `@font-face` rules from the supplied CSS.  Note that `@font-face` rules can be placed anywhere in your
+     * CSS and are not case sensitive.
      *
      * @param string $css CSS with comments, import and charset removed
      *
      * @return string[] The first element is the CSS with the valid `@font-face` rules removed.  The second
-     * element contains a concatenation of the valid `@font-face` rules, each followed by whatever whitespace followed it
-     * in the original CSS (so that either unminified or minified formatting is preserved); if there were no `@font-face`
-     * rules, it will be an empty string.
+     * element contains a concatenation of the valid `@font-face` rules, each followed by whatever whitespace followed
+     * it in the original CSS (so that either unminified or minified formatting is preserved); if there were no
+     * `@font-face` rules, it will be an empty string.
      */
-    private function extractFontFaces($css)
+    private function extractFontFaceRules(string $css): array
     {
         $possiblyModifiedCss = $css;
         $fontFaces = '';
-        $fontFaceRegex = '/^\\s*+(@font\-face\\s[^}]++}\\s*+)/i';
 
-        while (\preg_match($fontFaceRegex, $possiblyModifiedCss, $matches)) {
-            list(, $atRuleAndFollowingWhitespace) = $matches;
+        while (
+            \preg_match(
+                '/(@font-face[^}]++}\\s*+)/i',
+                $possiblyModifiedCss,
+                $matches
+            )
+        ) {
+            list($fullMatch, $atRuleAndFollowingWhitespace) = $matches;
 
-            $fontFaces .= $atRuleAndFollowingWhitespace;
+            if (\stripos($fullMatch, 'font-family') !== false && \stripos($fullMatch, 'src') !== false) {
+                $fontFaces .= $atRuleAndFollowingWhitespace;
+            }
 
-            $possiblyModifiedCss = \preg_replace($fontFaceRegex, '', $possiblyModifiedCss);
+            $possiblyModifiedCss = \str_replace($fullMatch, '', $possiblyModifiedCss);
         }
 
         return [$possiblyModifiedCss, $fontFaces];
@@ -1102,9 +1110,9 @@ class CssInliner extends AbstractHtmlProcessor
      * element.
      *
      * @param string $uninlinableCss This may contain any `@import` or `@font-face` rules that should precede the CSS
-     *        placed in the `<style>` element.  If there are no unlinlinable CSS rules to copy there, a `<style>` element
-     *        will be created containing just `$uninlinableCss`.  `$uninlinableCss` may be an empty string; if it is,
-     *        and there are no unlinlinable CSS rules, an empty `<style>` element will not be created.
+     *        placed in the `<style>` element.  If there are no unlinlinable CSS rules to copy there, a `<style>`
+     *        element will be created containing just `$uninlinableCss`.  `$uninlinableCss` may be an empty string;
+     *        if it is, and there are no unlinlinable CSS rules, an empty `<style>` element will not be created.
      *
      * @return void
      */
